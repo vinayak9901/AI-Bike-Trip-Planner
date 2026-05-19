@@ -7,17 +7,25 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from crewai import Agent, Task, Crew, LLM
+from crewai import Agent, Task, Crew
+from langchain_openai import ChatOpenAI
 
 load_dotenv()
 
+# API KEYS
+
 ORS_API_KEY = os.getenv("ORS_API_KEY")
 
-llm = LLM(
-    model="openrouter/meta-llama/llama-3.1-8b-instruct",
-    base_url=os.getenv("OPENAI_API_BASE"),
-    api_key=os.getenv("OPENAI_API_KEY")
+# OPENROUTER LLM
+
+llm = ChatOpenAI(
+    openai_api_key=os.getenv("OPENAI_API_KEY"),
+    openai_api_base=os.getenv("OPENAI_API_BASE"),
+    model_name="meta-llama/llama-3.1-8b-instruct",
+    temperature=0.7
 )
+
+# FASTAPI APP
 
 app = FastAPI()
 
@@ -29,6 +37,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# REQUEST MODEL
+
 class TripRequest(BaseModel):
     source: str
     destination: str
@@ -36,11 +46,15 @@ class TripRequest(BaseModel):
     days: str
     mileage: str
 
+# TEST ROUTE
+
 @app.get("/")
 def home():
     return {
         "message": "AI Bike Trip Planner Backend Running"
     }
+
+# GET COORDINATES
 
 def get_coordinates(place_name):
 
@@ -51,9 +65,9 @@ def get_coordinates(place_name):
     }
 
     params = {
-    "text": f"{place_name}, India",
-    "size": 1
-}
+        "text": f"{place_name}, India",
+        "size": 1
+    }
 
     response = requests.get(
         url,
@@ -67,6 +81,8 @@ def get_coordinates(place_name):
 
     return coordinates
 
+# MAIN API
+
 @app.post("/trip-plan")
 def generate_trip_plan(trip: TripRequest):
 
@@ -76,7 +92,7 @@ def generate_trip_plan(trip: TripRequest):
 
     destination_coords = get_coordinates(trip.destination)
 
-    # GET ROUTE DISTANCE
+    # ROUTE API
 
     route_url = "https://api.openrouteservice.org/v2/directions/driving-car"
 
@@ -104,7 +120,7 @@ def generate_trip_plan(trip: TripRequest):
 
     distance_km = round(distance_meters / 1000)
 
-    # FUEL CALCULATION
+    # FUEL ESTIMATION
 
     petrol_price = 105
 
@@ -112,19 +128,13 @@ def generate_trip_plan(trip: TripRequest):
 
     fuel_estimate = round(fuel_needed * petrol_price)
 
-    # FOOD COST
+    # OTHER COSTS
 
     food_cost = int(trip.days) * 500
 
-    # HOTEL COST
-
     hotel_cost = int(trip.days) * 1500
 
-    # MISC COST
-
     misc_cost = 1000
-
-    # TOTAL TRIP COST
 
     total_trip_cost = (
         fuel_estimate
@@ -137,8 +147,8 @@ def generate_trip_plan(trip: TripRequest):
 
     route_agent = Agent(
         role="Motorcycle Route Expert",
-        goal="Provide route insights for bike trips",
-        backstory="Expert in Indian highways and motorcycle touring",
+        goal="Provide route advice for motorcycle touring",
+        backstory="Expert in Indian highways and motorcycle travel",
         llm=llm,
         verbose=False
     )
@@ -146,9 +156,9 @@ def generate_trip_plan(trip: TripRequest):
     # ITINERARY AGENT
 
     itinerary_agent = Agent(
-        role="Trip Itinerary Planner",
-        goal="Create detailed motorcycle trip itineraries",
-        backstory="Expert in planning long distance motorcycle tours",
+        role="Travel Itinerary Expert",
+        goal="Create exciting destination itineraries",
+        backstory="Expert in travel planning and destination experiences",
         llm=llm,
         verbose=False
     )
@@ -159,15 +169,20 @@ def generate_trip_plan(trip: TripRequest):
         description=f"""
         Analyze this motorcycle trip.
 
-        Source: {trip.source}
-        Destination: {trip.destination}
-        Distance: {distance_km} km
+        Source:
+        {trip.source}
+
+        Destination:
+        {trip.destination}
+
+        Distance:
+        {distance_km} km
 
         Give:
-        - best riding strategy
-        - ideal break intervals
-        - highway advice
-        - best travel timing
+        - best highway strategy
+        - ideal riding timing
+        - break recommendations
+        - weather/riding suggestions
 
         Keep response concise.
         """,
@@ -175,34 +190,37 @@ def generate_trip_plan(trip: TripRequest):
         agent=route_agent
     )
 
-    # ITINERARY TASK
+    # DESTINATION ITINERARY TASK
 
     itinerary_task = Task(
-    description=f"""
-    Create a STRICTLY {trip.days}-day destination itinerary.
+        description=f"""
+        Create a STRICTLY {trip.days}-day destination itinerary.
 
-    Trip:
-    {trip.source} to {trip.destination}
+        Trip:
+        {trip.source} to {trip.destination}
 
-    IMPORTANT:
-    - The itinerary MUST contain EXACTLY {trip.days} days.
-    - Do NOT create extra days.
-    - Follow the duration strictly.
+        IMPORTANT:
+        - The itinerary MUST contain EXACTLY {trip.days} days.
+        - Do NOT create extra days.
+        - Follow the duration strictly.
 
-    Focus on:
-    - places to visit
-    - attractions
-    - scenic locations
-    - food spots
-    - local experiences
-    - photography locations
-    - relaxing activities
+        Focus on:
+        - places to visit
+        - famous attractions
+        - beaches
+        - scenic locations
+        - cafes and food spots
+        - photography spots
+        - local experiences
+        - relaxing activities
 
-    Keep itinerary concise and readable.
-    """,
-    expected_output=f"Exactly {trip.days}-day travel itinerary",
-    agent=itinerary_agent
-)
+        Avoid focusing too much on highway riding schedules.
+
+        Keep itinerary concise and readable.
+        """,
+        expected_output=f"Exactly {trip.days}-day travel itinerary",
+        agent=itinerary_agent
+    )
 
     # CREW
 
@@ -222,7 +240,10 @@ def generate_trip_plan(trip: TripRequest):
 
     final_result = str(result)
 
+    # RESPONSE
+
     return {
+
         "route": f"{trip.source} → {trip.destination}",
 
         "distance": f"{distance_km} km",
@@ -242,12 +263,12 @@ def generate_trip_plan(trip: TripRequest):
         "days": trip.days,
 
         "best_stops": [
-            "Popular Highway Food Stop",
+            "Popular Food Stop",
             "Scenic Photography Point",
             "Fuel & Rest Stop"
         ],
 
-        "safety_tip": "Take breaks every 2-3 hours and avoid late night riding.",
+        "safety_tip": "Take breaks every 2-3 hours and avoid night riding.",
 
         "ai_analysis": final_result
     }
