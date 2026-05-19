@@ -16,12 +16,12 @@ load_dotenv()
 
 ORS_API_KEY = os.getenv("ORS_API_KEY")
 
-# OPENROUTER LLM
+# OPENROUTER MODEL
 
 llm = ChatOpenAI(
-    openai_api_key=os.getenv("OPENAI_API_KEY"),
-    openai_api_base=os.getenv("OPENAI_API_BASE"),
-    model_name="meta-llama/llama-3.1-8b-instruct",
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_API_BASE"),
+    model="meta-llama/llama-3.1-8b-instruct",
     temperature=0.7
 )
 
@@ -46,7 +46,7 @@ class TripRequest(BaseModel):
     days: str
     mileage: str
 
-# TEST ROUTE
+# HOME ROUTE
 
 @app.get("/")
 def home():
@@ -86,7 +86,7 @@ def get_coordinates(place_name):
 @app.post("/trip-plan")
 def generate_trip_plan(trip: TripRequest):
 
-    # GET COORDINATES
+    # COORDINATES
 
     source_coords = get_coordinates(trip.source)
 
@@ -120,15 +120,13 @@ def generate_trip_plan(trip: TripRequest):
 
     distance_km = round(distance_meters / 1000)
 
-    # FUEL ESTIMATION
+    # COST ESTIMATION
 
     petrol_price = 105
 
     fuel_needed = distance_km / int(trip.mileage)
 
     fuel_estimate = round(fuel_needed * petrol_price)
-
-    # OTHER COSTS
 
     food_cost = int(trip.days) * 500
 
@@ -147,8 +145,8 @@ def generate_trip_plan(trip: TripRequest):
 
     route_agent = Agent(
         role="Motorcycle Route Expert",
-        goal="Provide route advice for motorcycle touring",
-        backstory="Expert in Indian highways and motorcycle travel",
+        goal="Provide route and riding guidance",
+        backstory="Expert in Indian motorcycle touring routes",
         llm=llm,
         verbose=False
     )
@@ -156,9 +154,9 @@ def generate_trip_plan(trip: TripRequest):
     # ITINERARY AGENT
 
     itinerary_agent = Agent(
-        role="Travel Itinerary Expert",
-        goal="Create exciting destination itineraries",
-        backstory="Expert in travel planning and destination experiences",
+        role="Travel Itinerary Planner",
+        goal="Create destination travel itineraries",
+        backstory="Expert in tourism and destination experiences",
         llm=llm,
         verbose=False
     )
@@ -167,7 +165,7 @@ def generate_trip_plan(trip: TripRequest):
 
     route_task = Task(
         description=f"""
-        Analyze this motorcycle trip.
+        Analyze this motorcycle route.
 
         Source:
         {trip.source}
@@ -178,11 +176,12 @@ def generate_trip_plan(trip: TripRequest):
         Distance:
         {distance_km} km
 
-        Give:
-        - best highway strategy
-        - ideal riding timing
-        - break recommendations
-        - weather/riding suggestions
+        Provide:
+        - best riding timing
+        - road conditions
+        - break suggestions
+        - riding strategy
+        - weather advice
 
         Keep response concise.
         """,
@@ -200,25 +199,25 @@ def generate_trip_plan(trip: TripRequest):
         {trip.source} to {trip.destination}
 
         IMPORTANT:
-        - The itinerary MUST contain EXACTLY {trip.days} days.
-        - Do NOT create extra days.
-        - Follow the duration strictly.
+        - MUST contain EXACTLY {trip.days} days
+        - Do NOT create extra days
 
         Focus on:
-        - places to visit
-        - famous attractions
+        - tourist attractions
         - beaches
-        - scenic locations
-        - cafes and food spots
+        - cafes
+        - food places
         - photography spots
         - local experiences
+        - scenic locations
+        - nightlife
         - relaxing activities
 
-        Avoid focusing too much on highway riding schedules.
+        Avoid focusing too much on riding schedules.
 
-        Keep itinerary concise and readable.
+        Keep itinerary clean and practical.
         """,
-        expected_output=f"Exactly {trip.days}-day travel itinerary",
+        expected_output=f"Exactly {trip.days}-day itinerary",
         agent=itinerary_agent
     )
 
@@ -268,7 +267,7 @@ def generate_trip_plan(trip: TripRequest):
             "Fuel & Rest Stop"
         ],
 
-        "safety_tip": "Take breaks every 2-3 hours and avoid night riding.",
+        "safety_tip": "Avoid night riding and take breaks every 2-3 hours.",
 
         "ai_analysis": final_result
     }
