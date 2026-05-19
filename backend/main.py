@@ -7,8 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from crewai import Agent, Task, Crew
-from langchain_openai import ChatOpenAI
+from openai import OpenAI
 
 load_dotenv()
 
@@ -16,16 +15,12 @@ load_dotenv()
 
 ORS_API_KEY = os.getenv("ORS_API_KEY")
 
-# OPENROUTER MODEL
-
-llm = ChatOpenAI(
+client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("OPENAI_API_BASE"),
-    model="meta-llama/llama-3.1-8b-instruct",
-    temperature=0.7
+    base_url=os.getenv("OPENAI_API_BASE")
 )
 
-# FASTAPI APP
+# FASTAPI
 
 app = FastAPI()
 
@@ -81,7 +76,7 @@ def get_coordinates(place_name):
 
     return coordinates
 
-# MAIN API
+# TRIP PLAN API
 
 @app.post("/trip-plan")
 def generate_trip_plan(trip: TripRequest):
@@ -120,7 +115,7 @@ def generate_trip_plan(trip: TripRequest):
 
     distance_km = round(distance_meters / 1000)
 
-    # COST ESTIMATION
+    # COSTS
 
     petrol_price = 105
 
@@ -141,103 +136,41 @@ def generate_trip_plan(trip: TripRequest):
         + misc_cost
     )
 
-    # ROUTE AGENT
+    # AI ITINERARY
 
-    route_agent = Agent(
-        role="Motorcycle Route Expert",
-        goal="Provide route and riding guidance",
-        backstory="Expert in Indian motorcycle touring routes",
-        llm=llm,
-        verbose=False
+    prompt = f"""
+    Create a STRICT {trip.days}-day travel itinerary.
+
+    Trip:
+    {trip.source} to {trip.destination}
+
+    Distance:
+    {distance_km} km
+
+    Focus on:
+    - tourist places
+    - cafes
+    - beaches
+    - scenic locations
+    - local food
+    - nightlife
+    - photography spots
+    - relaxing activities
+
+    Keep it concise and practical.
+    """
+
+    completion = client.chat.completions.create(
+        model="meta-llama/llama-3.1-8b-instruct",
+        messages=[
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
     )
 
-    # ITINERARY AGENT
-
-    itinerary_agent = Agent(
-        role="Travel Itinerary Planner",
-        goal="Create destination travel itineraries",
-        backstory="Expert in tourism and destination experiences",
-        llm=llm,
-        verbose=False
-    )
-
-    # ROUTE TASK
-
-    route_task = Task(
-        description=f"""
-        Analyze this motorcycle route.
-
-        Source:
-        {trip.source}
-
-        Destination:
-        {trip.destination}
-
-        Distance:
-        {distance_km} km
-
-        Provide:
-        - best riding timing
-        - road conditions
-        - break suggestions
-        - riding strategy
-        - weather advice
-
-        Keep response concise.
-        """,
-        expected_output="Motorcycle route guidance",
-        agent=route_agent
-    )
-
-    # DESTINATION ITINERARY TASK
-
-    itinerary_task = Task(
-        description=f"""
-        Create a STRICTLY {trip.days}-day destination itinerary.
-
-        Trip:
-        {trip.source} to {trip.destination}
-
-        IMPORTANT:
-        - MUST contain EXACTLY {trip.days} days
-        - Do NOT create extra days
-
-        Focus on:
-        - tourist attractions
-        - beaches
-        - cafes
-        - food places
-        - photography spots
-        - local experiences
-        - scenic locations
-        - nightlife
-        - relaxing activities
-
-        Avoid focusing too much on riding schedules.
-
-        Keep itinerary clean and practical.
-        """,
-        expected_output=f"Exactly {trip.days}-day itinerary",
-        agent=itinerary_agent
-    )
-
-    # CREW
-
-    crew = Crew(
-        agents=[
-            route_agent,
-            itinerary_agent
-        ],
-        tasks=[
-            route_task,
-            itinerary_task
-        ],
-        verbose=False
-    )
-
-    result = crew.kickoff()
-
-    final_result = str(result)
+    ai_result = completion.choices[0].message.content
 
     # RESPONSE
 
@@ -262,12 +195,12 @@ def generate_trip_plan(trip: TripRequest):
         "days": trip.days,
 
         "best_stops": [
+            "Scenic Stop",
             "Popular Food Stop",
-            "Scenic Photography Point",
             "Fuel & Rest Stop"
         ],
 
-        "safety_tip": "Avoid night riding and take breaks every 2-3 hours.",
+        "safety_tip": "Avoid night riding and rest every 2-3 hours.",
 
-        "ai_analysis": final_result
+        "ai_analysis": ai_result
     }
