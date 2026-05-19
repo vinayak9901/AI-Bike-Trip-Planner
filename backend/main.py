@@ -7,18 +7,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from openai import OpenAI
-
 load_dotenv()
 
 # API KEYS
 
 ORS_API_KEY = os.getenv("ORS_API_KEY")
-
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("OPENAI_API_BASE")
-)
+OPENROUTER_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # FASTAPI
 
@@ -76,6 +70,31 @@ def get_coordinates(place_name):
 
     return coordinates
 
+# AI GENERATION
+
+def generate_ai_itinerary(prompt):
+
+    response = requests.post(
+        url="https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json={
+            "model": "meta-llama/llama-3.1-8b-instruct",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }
+    )
+
+    data = response.json()
+
+    return data["choices"][0]["message"]["content"]
+
 # TRIP PLAN API
 
 @app.post("/trip-plan")
@@ -115,7 +134,7 @@ def generate_trip_plan(trip: TripRequest):
 
     distance_km = round(distance_meters / 1000)
 
-    # COSTS
+    # COST ESTIMATION
 
     petrol_price = 105
 
@@ -136,7 +155,7 @@ def generate_trip_plan(trip: TripRequest):
         + misc_cost
     )
 
-    # AI ITINERARY
+    # AI PROMPT
 
     prompt = f"""
     Create a STRICT {trip.days}-day travel itinerary.
@@ -147,30 +166,20 @@ def generate_trip_plan(trip: TripRequest):
     Distance:
     {distance_km} km
 
-    Focus on:
-    - tourist places
+    Include:
+    - tourist attractions
     - cafes
     - beaches
-    - scenic locations
     - local food
     - nightlife
+    - scenic places
     - photography spots
     - relaxing activities
 
-    Keep it concise and practical.
+    Keep response practical and concise.
     """
 
-    completion = client.chat.completions.create(
-        model="meta-llama/llama-3.1-8b-instruct",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    )
-
-    ai_result = completion.choices[0].message.content
+    ai_result = generate_ai_itinerary(prompt)
 
     # RESPONSE
 
@@ -200,7 +209,7 @@ def generate_trip_plan(trip: TripRequest):
             "Fuel & Rest Stop"
         ],
 
-        "safety_tip": "Avoid night riding and rest every 2-3 hours.",
+        "safety_tip": "Avoid night riding and take breaks every 2-3 hours.",
 
         "ai_analysis": ai_result
     }
